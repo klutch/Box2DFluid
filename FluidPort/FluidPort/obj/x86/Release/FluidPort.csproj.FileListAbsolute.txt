@@ -1,0 +1,7 @@
+D:\_C#\FluidPort\FluidPort\FluidPort\bin\x86\Release\Content\debug.xnb
+D:\_C#\FluidPort\FluidPort\FluidPort\bin\x86\Release\FluidPort.exe
+D:\_C#\FluidPort\FluidPort\FluidPort\bin\x86\Release\FluidPort.pdb
+D:\_C#\FluidPort\FluidPort\FluidPort\obj\x86\Release\ResolveAssemblyReference.cache
+D:\_C#\FluidPort\FluidPort\FluidPort\obj\x86\Release\Microsoft.Xna.Framework.RuntimeProfile.txt
+D:\_C#\FluidPort\FluidPort\FluidPort\obj\x86\Release\FluidPort.exe
+D:\_C#\FluidPort\FluidPort\FluidPort\obj\x86\Release\FluidPort.pdb
