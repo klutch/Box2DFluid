@@ -3,3 +3,5 @@ FluidPort/FluidPort/bin
 FluidPort/FluidPortContent/obj
 FluidPort/FluidPortContent/bin
 FluidPort.suo
+FluidPort/FluidPort/FluidPort.csproj.Debug.cachefile
+FluidPort/FluidPort/FluidPort.csproj.Release.cachefile
