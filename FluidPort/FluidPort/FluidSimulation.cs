@@ -19,8 +19,8 @@ namespace FluidPort
     {
         public const int MAX_PARTICLES = 20000;
         public const int MAX_NEIGHBORS = 75;
-        public const float CELL_SIZE = 0.5f;
-        public const float RADIUS = 0.6f;
+        public const float CELL_SIZE = 0.6f;
+        public const float RADIUS = 0.9f;
         public const float VISCOSITY = 0.004f;
         public const float IDEAL_RADIUS = 50f;
         public const float IDEAL_RADIUS_SQ = IDEAL_RADIUS * IDEAL_RADIUS;
