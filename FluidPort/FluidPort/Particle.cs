@@ -15,6 +15,8 @@ namespace FluidPort
         public int ci;
         public int cj;
         public int index;
+        public float p;
+        public float pnear;
 
         public Particle(Vector2 position, Vector2 velocity, bool alive)
         {

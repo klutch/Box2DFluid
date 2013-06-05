@@ -8,6 +8,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading.Tasks;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
@@ -16,7 +17,7 @@ namespace FluidPort
 {
     public class FluidSimulation
     {
-        public const int MAX_PARTICLES = 5000;
+        public const int MAX_PARTICLES = 20000;
         public const int MAX_NEIGHBORS = 75;
         public const float CELL_SIZE = 0.5f;
         public const float RADIUS = 0.6f;
@@ -38,6 +39,7 @@ namespace FluidPort
         private float _scale = 32f;
         private Vector2 _mouse;
         private Random _random;
+        private object _calculateForcesLock = new object();
 
         private int getGridX(float x) { return (int)Math.Floor(x / CELL_SIZE); }
         private int getGridY(float y) { return (int)Math.Floor(y / CELL_SIZE); }
@@ -97,128 +99,120 @@ namespace FluidPort
             }
         }
 
-        private void applyLiquidConstraints()
+        // prepareSimulation
+        private void prepareSimulation(int index)
         {
-            // Prepare simulation
-            for (int i = 0; i < _numActiveParticles; i++)
+            Particle particle = _liquid[index];
+
+            // Find neighbors
+            findNeighbors(particle);
+
+            // Scale positions and velocities
+            _scaledPositions[index] = particle.position * MULTIPLIER;
+            _scaledVelocities[index] = particle.velocity * MULTIPLIER;
+
+            // Reset deltas
+            _delta[index] = Vector2.Zero;
+
+            // Reset pressures
+            _liquid[index].p = 0;
+            _liquid[index].pnear = 0;
+        }
+
+        // calculatePressure
+        private void calculatePressure(int index)
+        {
+            Particle particle = _liquid[index];
+
+            for (int a = 0; a < particle.neighborCount; a++)
             {
-                int index = _activeParticles[i];
-                Particle particle = _liquid[index];
+                Vector2 relativePosition = _scaledPositions[particle.neighbors[a]] - _scaledPositions[index];
+                float distanceSq = relativePosition.LengthSquared();
 
-                // Scale positions and velocities
-                _scaledPositions[index] = particle.position * MULTIPLIER;
-                _scaledVelocities[index] = particle.velocity * MULTIPLIER;
-
-                // Reset deltas
-                _delta[index] = Vector2.Zero;
-            }
-
-            for (int i = 0; i < _numActiveParticles; i++)
-            {
-                int index = _activeParticles[i];
-                Particle particle = _liquid[index];
-
-                // Find neighbors
-                findNeighbors(particle);
-
-                // Calculate pressure
-                float p = 0.0f;
-                float pnear = 0.0f;
-                for (int a = 0; a < particle.neighborCount; a++)
+                //within idealRad check
+                if (distanceSq < IDEAL_RADIUS_SQ)
                 {
-                    Vector2 relativePosition = _scaledPositions[particle.neighbors[a]] - _scaledPositions[index];
-                    float distanceSq = relativePosition.LengthSquared();
-
-                    //within idealRad check
-                    if (distanceSq < IDEAL_RADIUS_SQ)
-                    {
-                        particle.distances[a] = (float)Math.Sqrt(distanceSq);
-                        //if (particle.distances[a] < Settings.EPSILON) particle.distances[a] = IDEAL_RADIUS - .01f;
-                        float oneminusq = 1.0f - (particle.distances[a] / IDEAL_RADIUS);
-                        p = (p + oneminusq * oneminusq);
-                        pnear = (pnear + oneminusq * oneminusq * oneminusq);
-                    }
-                    else
-                    {
-                        particle.distances[a] = float.MaxValue;
-                    }
+                    particle.distances[a] = (float)Math.Sqrt(distanceSq);
+                    //if (particle.distances[a] < Settings.EPSILON) particle.distances[a] = IDEAL_RADIUS - .01f;
+                    float oneminusq = 1.0f - (particle.distances[a] / IDEAL_RADIUS);
+                    particle.p = (particle.p + oneminusq * oneminusq);
+                    particle.pnear = (particle.pnear + oneminusq * oneminusq * oneminusq);
                 }
-
-                // Calculate forces
-                float pressure = (p - 5f) / 2.0f; //normal pressure term
-                float presnear = pnear / 2.0f; //near particles term
-                Vector2 change = Vector2.Zero;
-                for (int a = 0; a < particle.neighborCount; a++)
-                {
-                    Vector2 relativePosition = _scaledPositions[particle.neighbors[a]] - _scaledPositions[index];
-
-                    if (particle.distances[a] < IDEAL_RADIUS)
-                    {
-                        float q = particle.distances[a] / IDEAL_RADIUS;
-                        float oneminusq = 1.0f - q;
-                        float factor = oneminusq * (pressure + presnear * oneminusq) / (2.0F * particle.distances[a]);
-                        Vector2 d = relativePosition * factor;
-                        Vector2 relativeVelocity = _scaledVelocities[particle.neighbors[a]] - _scaledVelocities[index];
-
-                        factor = VISCOSITY * oneminusq * DT;
-                        d -= relativeVelocity * factor;
-                        _delta[particle.neighbors[a]] += d;
-                        change -= d;
-                    }
-                }
-                _delta[index] += change;
-            }
-
-            // Move particles
-            for (int i = 0; i < _numActiveParticles; i++)
-            {
-                int index = _activeParticles[i];
-                Particle particle = _liquid[index];
-
-                particle.position += _delta[index] / MULTIPLIER;
-                particle.velocity += _delta[index] / (MULTIPLIER * DT);
-
-                /*
-                // NaN/Infinity Tests
-                Debug.Assert(!float.IsInfinity(particle.position.X));
-                Debug.Assert(!float.IsInfinity(particle.position.Y));
-                Debug.Assert(!float.IsInfinity(particle.velocity.X));
-                Debug.Assert(!float.IsInfinity(particle.velocity.Y));
-                Debug.Assert(!float.IsNaN(particle.position.X));
-                Debug.Assert(!float.IsNaN(particle.position.Y));
-                Debug.Assert(!float.IsNaN(particle.velocity.X));
-                Debug.Assert(!float.IsNaN(particle.velocity.Y));
-                */
-
-                // Update particle cell
-                int x = getGridX(particle.position.X);
-                int y = getGridY(particle.position.Y);
-
-                if (particle.ci == x && particle.cj == y)
-                    continue;
                 else
                 {
-                    _grid[particle.ci][particle.cj].Remove(index);
-
-                    if (_grid[particle.ci][particle.cj].Count == 0)
-                    {
-                        _grid[particle.ci].Remove(particle.cj);
-
-                        if (_grid[particle.ci].Count == 0)
-                        {
-                            _grid.Remove(particle.ci);
-                        }
-                    }
-
-                    if (!_grid.ContainsKey(x))
-                        _grid[x] = new Dictionary<int, List<int>>();
-                    if (!_grid[x].ContainsKey(y))
-                        _grid[x][y] = new List<int>(20);
-
-                    _grid[x][y].Add(index);
-                    particle.ci = x;
-                    particle.cj = y;
+                    particle.distances[a] = float.MaxValue;
                 }
+            }
+        }
+
+        // calculateForce
+        private Vector2[] calculateForce(int index, Vector2[] accumulatedDelta)
+        {
+            Particle particle = _liquid[index];
+
+            // Calculate forces
+            float pressure = (particle.p - 5f) / 2.0f; //normal pressure term
+            float presnear = particle.pnear / 2.0f; //near particles term
+            Vector2 change = Vector2.Zero;
+            for (int a = 0; a < particle.neighborCount; a++)
+            {
+                Vector2 relativePosition = _scaledPositions[particle.neighbors[a]] - _scaledPositions[index];
+
+                if (particle.distances[a] < IDEAL_RADIUS)
+                {
+                    float q = particle.distances[a] / IDEAL_RADIUS;
+                    float oneminusq = 1.0f - q;
+                    float factor = oneminusq * (pressure + presnear * oneminusq) / (2.0F * particle.distances[a]);
+                    Vector2 d = relativePosition * factor;
+                    Vector2 relativeVelocity = _scaledVelocities[particle.neighbors[a]] - _scaledVelocities[index];
+
+                    factor = VISCOSITY * oneminusq * DT;
+                    d -= relativeVelocity * factor;
+                    accumulatedDelta[particle.neighbors[a]] += d;
+                    change -= d;
+                }
+            }
+            accumulatedDelta[index] += change;
+
+            return accumulatedDelta;
+        }
+
+        // moveParticle
+        private void moveParticle(int index)
+        {
+            Particle particle = _liquid[index];
+            int x = getGridX(particle.position.X);
+            int y = getGridY(particle.position.Y);
+
+            // Move particle
+            particle.position += _delta[index] / MULTIPLIER;
+            particle.velocity += _delta[index] / (MULTIPLIER * DT);
+
+            // Update particle cell
+            if (particle.ci == x && particle.cj == y)
+                return;
+            else
+            {
+                _grid[particle.ci][particle.cj].Remove(index);
+
+                if (_grid[particle.ci][particle.cj].Count == 0)
+                {
+                    _grid[particle.ci].Remove(particle.cj);
+
+                    if (_grid[particle.ci].Count == 0)
+                    {
+                        _grid.Remove(particle.ci);
+                    }
+                }
+
+                if (!_grid.ContainsKey(x))
+                    _grid[x] = new Dictionary<int, List<int>>();
+                if (!_grid[x].ContainsKey(y))
+                    _grid[x][y] = new List<int>(20);
+
+                _grid[x][y].Add(index);
+                particle.ci = x;
+                particle.cj = y;
             }
         }
 
@@ -263,7 +257,34 @@ namespace FluidPort
             if (mouseState.LeftButton == ButtonState.Pressed)
                 createParticle();
 
-            applyLiquidConstraints();
+            // Prepare simulation
+            Parallel.For(0, _numActiveParticles, i => { prepareSimulation(_activeParticles[i]); });
+
+            // Calculate pressures
+            Parallel.For(0, _numActiveParticles, i => { calculatePressure(_activeParticles[i]); });
+
+            // Calculate forces
+            Parallel.For(
+                0,
+                _numActiveParticles,
+                () => new Vector2[MAX_PARTICLES],
+                (i, state, accumulatedDelta) => calculateForce(_activeParticles[i], accumulatedDelta),
+                (accumulatedDelta) =>
+                {
+                    lock (_calculateForcesLock)
+                    {
+                        for (int i = _numActiveParticles - 1; i >= 0; i--)
+                        {
+                            int index = _activeParticles[i];
+                            _delta[index] += accumulatedDelta[index];
+                        }
+                    }
+                }
+            );
+
+            // Update particle cells
+            for (int i = 0; i < _numActiveParticles; i++)
+                moveParticle(_activeParticles[i]);
         }
 
         public void draw()
