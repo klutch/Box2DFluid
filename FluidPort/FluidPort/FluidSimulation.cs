@@ -254,7 +254,7 @@ namespace FluidPort
         // resolveCollisions
         private void resolveCollision(int index)
         {
-            Particle particle = _liquid[_activeParticles[index]];
+            Particle particle = _liquid[index];
 
             // Test all fixtures stored in this particle
             for (int i = 0; i < particle.numFixturesToTest; i++)
